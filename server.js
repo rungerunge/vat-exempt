@@ -1,6 +1,5 @@
 const express = require('express');
 const { shopifyApi, ApiVersion } = require('@shopify/shopify-api');
-const { restResources } = require('@shopify/shopify-api/rest/admin/2024-01');
 const { NodeRuntime } = require('@shopify/shopify-api/runtime/node');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -34,8 +33,7 @@ const shopify = shopifyApi({
   hostName: process.env.HOST?.replace(/https?:\/\//, '') || 'vat-exempt.onrender.com',
   apiVersion: ApiVersion.January24,
   isEmbeddedApp: true,
-  runtime: new NodeRuntime(),
-  restResources
+  runtime: new NodeRuntime()
 });
 
 const app = express();
