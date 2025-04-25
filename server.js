@@ -1,6 +1,7 @@
 const express = require('express');
-const { shopifyApi, ApiVersion } = require('@shopify/shopify-api');
-const fetch = require('node-fetch');
+const { shopifyApi, LATEST_API_VERSION } = require('@shopify/shopify-api');
+const { LogSeverity } = require('@shopify/shopify-api');
+require('@shopify/shopify-api/adapters/node');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const winston = require('winston');
@@ -31,9 +32,13 @@ const shopify = shopifyApi({
   apiSecretKey: process.env.SHOPIFY_API_SECRET || '0f76d5deee01b8a10195090084cdbae5',
   scopes: ['read_products', 'write_products', 'read_orders', 'write_orders'],
   hostName: process.env.HOST?.replace(/https?:\/\//, '') || 'vat-exempt.onrender.com',
-  apiVersion: ApiVersion.January24,
+  apiVersion: LATEST_API_VERSION,
   isEmbeddedApp: true,
-  fetchApi: fetch
+  logger: {
+    level: LogSeverity.Info,
+    httpRequests: true,
+    timestamps: true,
+  },
 });
 
 const app = express();
