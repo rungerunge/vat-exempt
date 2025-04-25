@@ -1,6 +1,6 @@
 const express = require('express');
-const { shopifyApi, ApiVersion, RuntimeBitError } = require('@shopify/shopify-api');
-const { createNodeFetch } = require('@shopify/shopify-api/runtime');
+const { shopifyApi, ApiVersion } = require('@shopify/shopify-api');
+const fetch = require('node-fetch');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const winston = require('winston');
@@ -33,7 +33,7 @@ const shopify = shopifyApi({
   hostName: process.env.HOST?.replace(/https?:\/\//, '') || 'vat-exempt.onrender.com',
   apiVersion: ApiVersion.January24,
   isEmbeddedApp: true,
-  customFetch: createNodeFetch()
+  fetchApi: fetch
 });
 
 const app = express();
