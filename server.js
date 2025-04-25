@@ -55,6 +55,15 @@ const validateShop = (shop) => {
 };
 
 // OAuth routes
+app.get('/', (req, res) => {
+  const { shop } = req.query;
+  if (!shop || !validateShop(shop)) {
+    res.status(400).send('Invalid shop parameter');
+    return;
+  }
+  res.redirect(`/api/auth?shop=${shop}`);
+});
+
 app.get('/api/auth', async (req, res) => {
   try {
     const { shop } = req.query;
@@ -96,9 +105,8 @@ app.get('/api/auth/callback', async (req, res) => {
       rawResponse: res,
     });
 
-    // Store session token securely
-    // Redirect to app with session token
-    const redirectUrl = `/?shop=${shop}&host=${req.query.host}`;
+    // After successful auth, redirect to app with shop parameter
+    const redirectUrl = `/?shop=${shop}`;
     res.redirect(redirectUrl);
   } catch (error) {
     logger.error('Auth callback error:', error);
@@ -109,7 +117,13 @@ app.get('/api/auth/callback', async (req, res) => {
 // Verify session middleware
 const verifySession = async (req, res, next) => {
   try {
-    const session = await shopify.session.getCurrentSession(req, res);
+    const bearerToken = req.headers.authorization?.match(/Bearer (.*)/)?.[1];
+    if (!bearerToken) {
+      res.status(401).send('Unauthorized');
+      return;
+    }
+
+    const session = await shopify.session.decodeSessionToken(bearerToken);
     if (!session) {
       res.status(401).send('Unauthorized');
       return;

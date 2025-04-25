@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VAT Exempt App</title>
+    <script src="https://unpkg.com/@shopify/app-bridge-utils@3"></script>
     <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
     <script>
         window.addEventListener('load', () => {
@@ -11,43 +12,53 @@
             const shop = params.get('shop');
             const host = params.get('host');
 
-            if (!shop || !host) {
+            if (!shop) {
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('error').style.display = 'block';
+                document.getElementById('error-message').textContent = 'Missing shop parameter';
                 return;
             }
 
             // Initialize App Bridge
             const config = {
                 apiKey: '8b8f6832a14491d703b6df9ceea75070',
-                host: host,
+                host: host || window.location.hostname,
                 forceRedirect: true
             };
 
-            const app = window['app-bridge'].createApp(config);
+            try {
+                const app = window['app-bridge'].createApp(config);
+                const { getSessionToken } = window['app-bridge-utils'];
 
-            // Check if we're authenticated
-            fetch('/api/shop-info')
-                .then(response => {
-                    if (!response.ok) {
-                        // If not authenticated, redirect to auth
-                        window.location.href = `/api/auth?shop=${shop}`;
-                        return;
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (data) {
+                // Get session token and check authentication
+                getSessionToken(app).then(token => {
+                    fetch('/api/shop-info', {
+                        headers: {
+                            Authorization: `Bearer ${token}`
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Authentication failed');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
                         document.getElementById('loading').style.display = 'none';
                         document.getElementById('app').style.display = 'block';
                         // Initialize your app here
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('error').style.display = 'block';
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        window.location.href = `/api/auth?shop=${shop}`;
+                    });
                 });
+            } catch (error) {
+                console.error('App Bridge error:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error-message').textContent = 'Failed to initialize app';
+            }
         });
     </script>
     <style>
@@ -86,7 +97,7 @@
         </div>
         <div id="error">
             <h2>Error</h2>
-            <p>There was an error loading the application. Please try refreshing the page or contact support if the problem persists.</p>
+            <p id="error-message">There was an error loading the application. Please try refreshing the page or contact support if the problem persists.</p>
         </div>
         <div id="app">
             <!-- Your app content will go here -->
