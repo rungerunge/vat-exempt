@@ -26,6 +26,9 @@ if (process.env.NODE_ENV !== 'production') {
   }));
 }
 
+// In-memory session storage (replace with proper storage in production)
+const sessions = new Map();
+
 // Initialize Shopify API
 const shopify = shopifyApi({
   apiKey: process.env.SHOPIFY_API_KEY || '8b8f6832a14491d703b6df9ceea75070',
@@ -38,6 +41,26 @@ const shopify = shopifyApi({
     level: LogSeverity.Info,
     httpRequests: true,
     timestamps: true,
+  },
+  sessionStorage: {
+    storeSession: async (session) => {
+      logger.info('Storing session:', session.id);
+      sessions.set(session.id, JSON.stringify(session));
+      return true;
+    },
+    loadSession: async (id) => {
+      logger.info('Loading session:', id);
+      const session = sessions.get(id);
+      if (session) {
+        return JSON.parse(session);
+      }
+      return undefined;
+    },
+    deleteSession: async (id) => {
+      logger.info('Deleting session:', id);
+      sessions.delete(id);
+      return true;
+    },
   },
 });
 
@@ -55,28 +78,24 @@ const validateShop = (shop) => {
 
 // Ensure authenticated middleware
 const ensureAuthenticated = async (req, res, next) => {
-  const { shop } = req.query;
-
-  if (!shop || !validateShop(shop)) {
-    res.status(400).send('Invalid shop parameter');
-    return;
-  }
-
   try {
-    // Check if we have an active session
-    const sessionId = await shopify.session.getCurrentId({
-      isOnline: true,
-      rawRequest: req,
-      rawResponse: res,
-    });
+    const { shop } = req.query;
 
-    if (!sessionId) {
-      // No session found, redirect to auth
+    if (!shop || !validateShop(shop)) {
+      logger.error('Invalid shop parameter:', shop);
+      res.status(400).send('Invalid shop parameter');
+      return;
+    }
+
+    // Check if we have an active session
+    const session = await shopify.session.getCurrentSession(req, res);
+    
+    if (!session) {
+      logger.info('No session found, redirecting to auth');
       res.redirect(`/api/auth?shop=${shop}`);
       return;
     }
 
-    const session = await shopify.session.loadSession(sessionId);
     req.shopifySession = session;
     next();
   } catch (error) {
@@ -87,11 +106,6 @@ const ensureAuthenticated = async (req, res, next) => {
 
 // Routes
 app.get('/', ensureAuthenticated, (req, res) => {
-  const { shop } = req.query;
-  if (!shop || !validateShop(shop)) {
-    res.status(400).send('Invalid shop parameter');
-    return;
-  }
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -103,6 +117,7 @@ app.get('/api/auth', async (req, res) => {
     const { shop } = req.query;
 
     if (!shop || !validateShop(shop)) {
+      logger.error('Invalid shop parameter:', shop);
       res.status(400).send('Invalid shop parameter');
       return;
     }
@@ -118,6 +133,7 @@ app.get('/api/auth', async (req, res) => {
       rawResponse: res,
     });
 
+    logger.info('Redirecting to auth route:', authRoute);
     res.redirect(authRoute);
   } catch (error) {
     logger.error('Auth error:', error);
@@ -127,26 +143,32 @@ app.get('/api/auth', async (req, res) => {
 
 app.get('/api/auth/callback', async (req, res) => {
   try {
+    logger.info('Received callback with query params:', req.query);
     const { shop } = req.query;
 
     if (!shop || !validateShop(shop)) {
+      logger.error('Invalid shop parameter in callback:', shop);
       res.status(400).send('Invalid shop parameter');
       return;
     }
 
+    // Complete the OAuth process
     const session = await shopify.auth.callback({
       rawRequest: req,
       rawResponse: res,
     });
 
-    await shopify.session.saveSession(session);
+    // Save session
+    await shopify.session.storeSession(session);
+    logger.info('Session stored successfully:', session.id);
 
-    // After successful auth, redirect back to app
-    const redirectUrl = `/?shop=${shop}`;
+    // Redirect back to app with shop parameter
+    const redirectUrl = `/?shop=${shop}&host=${req.query.host}`;
+    logger.info('Redirecting to:', redirectUrl);
     res.redirect(redirectUrl);
   } catch (error) {
     logger.error('Auth callback error:', error);
-    res.status(500).send('Authentication callback failed');
+    res.status(500).send('Authentication callback failed: ' + error.message);
   }
 });
 
@@ -176,6 +198,15 @@ app.post('/api/validate-vat', ensureAuthenticated, async (req, res) => {
     logger.error('VAT validation error:', error);
     res.status(500).json({ error: 'VAT validation failed' });
   }
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  logger.error('Unhandled error:', err);
+  res.status(500).json({
+    error: 'Internal server error',
+    message: err.message
+  });
 });
 
 // Start server
