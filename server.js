@@ -1,11 +1,11 @@
 const express = require('express');
-const { shopifyApi, LATEST_API_VERSION } = require('@shopify/shopify-api');
-const { LogSeverity } = require('@shopify/shopify-api');
+const { shopifyApi, LATEST_API_VERSION, LogSeverity } = require('@shopify/shopify-api');
 require('@shopify/shopify-api/adapters/node');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const winston = require('winston');
 const path = require('path');
+const crypto = require('crypto');
 
 // Configure logger
 const logger = winston.createLogger({
@@ -48,14 +48,33 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Routes
+// Shopify auth middleware
+const validateShop = (shop) => {
+  const shopRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/;
+  return shopRegex.test(shop);
+};
+
+// OAuth routes
 app.get('/api/auth', async (req, res) => {
   try {
+    const { shop } = req.query;
+
+    if (!shop || !validateShop(shop)) {
+      res.status(400).send('Invalid shop parameter');
+      return;
+    }
+
+    // Generate and store nonce
+    const nonce = crypto.randomBytes(16).toString('hex');
+    
     const authRoute = await shopify.auth.begin({
-      shop: req.query.shop,
+      shop,
       callbackPath: '/api/auth/callback',
       isOnline: false,
+      rawRequest: req,
+      rawResponse: res,
     });
+
     res.redirect(authRoute);
   } catch (error) {
     logger.error('Auth error:', error);
@@ -65,19 +84,62 @@ app.get('/api/auth', async (req, res) => {
 
 app.get('/api/auth/callback', async (req, res) => {
   try {
+    const { shop } = req.query;
+
+    if (!shop || !validateShop(shop)) {
+      res.status(400).send('Invalid shop parameter');
+      return;
+    }
+
     const session = await shopify.auth.callback({
       rawRequest: req,
       rawResponse: res,
     });
-    res.redirect('/');
+
+    // Store session token securely
+    // Redirect to app with session token
+    const redirectUrl = `/?shop=${shop}&host=${req.query.host}`;
+    res.redirect(redirectUrl);
   } catch (error) {
     logger.error('Auth callback error:', error);
     res.status(500).send('Authentication callback failed');
   }
 });
 
+// Verify session middleware
+const verifySession = async (req, res, next) => {
+  try {
+    const session = await shopify.session.getCurrentSession(req, res);
+    if (!session) {
+      res.status(401).send('Unauthorized');
+      return;
+    }
+    req.shopifySession = session;
+    next();
+  } catch (error) {
+    logger.error('Session verification error:', error);
+    res.status(401).send('Unauthorized');
+  }
+};
+
+// Protected routes
+app.get('/api/shop-info', verifySession, async (req, res) => {
+  try {
+    const client = new shopify.clients.Rest({
+      session: req.shopifySession,
+    });
+    const response = await client.get({
+      path: 'shop',
+    });
+    res.json(response.body);
+  } catch (error) {
+    logger.error('Shop info error:', error);
+    res.status(500).json({ error: 'Failed to fetch shop info' });
+  }
+});
+
 // VAT Validation Endpoint
-app.post('/api/validate-vat', async (req, res) => {
+app.post('/api/validate-vat', verifySession, async (req, res) => {
   try {
     const { vatId } = req.body;
     // TODO: Implement VAT validation logic

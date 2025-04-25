@@ -1,13 +1,98 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
-    <title>VAT Exemption App</title>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VAT Exempt App</title>
     <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
+    <script>
+        window.addEventListener('load', () => {
+            const params = new URLSearchParams(window.location.search);
+            const shop = params.get('shop');
+            const host = params.get('host');
+
+            if (!shop || !host) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                return;
+            }
+
+            // Initialize App Bridge
+            const config = {
+                apiKey: '8b8f6832a14491d703b6df9ceea75070',
+                host: host,
+                forceRedirect: true
+            };
+
+            const app = window['app-bridge'].createApp(config);
+
+            // Check if we're authenticated
+            fetch('/api/shop-info')
+                .then(response => {
+                    if (!response.ok) {
+                        // If not authenticated, redirect to auth
+                        window.location.href = `/api/auth?shop=${shop}`;
+                        return;
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data) {
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('app').style.display = 'block';
+                        // Initialize your app here
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('error').style.display = 'block';
+                });
+        });
+    </script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f6f6f7;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        #loading, #error {
+            text-align: center;
+            padding: 40px;
+        }
+        #app {
+            display: none;
+        }
+        #error {
+            display: none;
+            color: #bf0711;
+        }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script src="/bundle.js"></script>
+    <div class="container">
+        <div id="loading">
+            <h2>Loading VAT Exempt App...</h2>
+            <p>Please wait while we set up your application.</p>
+        </div>
+        <div id="error">
+            <h2>Error</h2>
+            <p>There was an error loading the application. Please try refreshing the page or contact support if the problem persists.</p>
+        </div>
+        <div id="app">
+            <!-- Your app content will go here -->
+            <h1>VAT Exempt App</h1>
+            <p>Welcome to the VAT Exempt App. Your application is now ready to use.</p>
+        </div>
+    </div>
   </body>
 </html> 
