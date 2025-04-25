@@ -1,5 +1,7 @@
 const express = require('express');
 const { shopifyApi, ApiVersion } = require('@shopify/shopify-api');
+const { restResources } = require('@shopify/shopify-api/rest/admin/2024-01');
+const { NodeRuntime } = require('@shopify/shopify-api/runtime/node');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const winston = require('winston');
@@ -24,14 +26,16 @@ if (process.env.NODE_ENV !== 'production') {
   }));
 }
 
-// Initialize Shopify API
+// Initialize Shopify API with Node runtime
 const shopify = shopifyApi({
   apiKey: process.env.SHOPIFY_API_KEY || '8b8f6832a14491d703b6df9ceea75070',
   apiSecretKey: process.env.SHOPIFY_API_SECRET || '0f76d5deee01b8a10195090084cdbae5',
   scopes: ['read_products', 'write_products', 'read_orders', 'write_orders'],
   hostName: process.env.HOST?.replace(/https?:\/\//, '') || 'vat-exempt.onrender.com',
   apiVersion: ApiVersion.January24,
-  isEmbeddedApp: true
+  isEmbeddedApp: true,
+  runtime: new NodeRuntime(),
+  restResources
 });
 
 const app = express();
