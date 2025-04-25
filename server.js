@@ -46,7 +46,6 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
 // Shopify auth middleware
 const validateShop = (shop) => {
@@ -54,15 +53,50 @@ const validateShop = (shop) => {
   return shopRegex.test(shop);
 };
 
-// OAuth routes
-app.get('/', (req, res) => {
+// Ensure authenticated middleware
+const ensureAuthenticated = async (req, res, next) => {
+  const { shop } = req.query;
+
+  if (!shop || !validateShop(shop)) {
+    res.status(400).send('Invalid shop parameter');
+    return;
+  }
+
+  try {
+    // Check if we have an active session
+    const sessionId = await shopify.session.getCurrentId({
+      isOnline: true,
+      rawRequest: req,
+      rawResponse: res,
+    });
+
+    if (!sessionId) {
+      // No session found, redirect to auth
+      res.redirect(`/api/auth?shop=${shop}`);
+      return;
+    }
+
+    const session = await shopify.session.loadSession(sessionId);
+    req.shopifySession = session;
+    next();
+  } catch (error) {
+    logger.error('Authentication error:', error);
+    res.redirect(`/api/auth?shop=${shop}`);
+  }
+};
+
+// Routes
+app.get('/', ensureAuthenticated, (req, res) => {
   const { shop } = req.query;
   if (!shop || !validateShop(shop)) {
     res.status(400).send('Invalid shop parameter');
     return;
   }
-  res.redirect(`/api/auth?shop=${shop}`);
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+// Serve static files after auth check
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/auth', async (req, res) => {
   try {
@@ -79,7 +113,7 @@ app.get('/api/auth', async (req, res) => {
     const authRoute = await shopify.auth.begin({
       shop,
       callbackPath: '/api/auth/callback',
-      isOnline: false,
+      isOnline: true,
       rawRequest: req,
       rawResponse: res,
     });
@@ -105,7 +139,9 @@ app.get('/api/auth/callback', async (req, res) => {
       rawResponse: res,
     });
 
-    // After successful auth, redirect to app with shop parameter
+    await shopify.session.saveSession(session);
+
+    // After successful auth, redirect back to app
     const redirectUrl = `/?shop=${shop}`;
     res.redirect(redirectUrl);
   } catch (error) {
@@ -114,30 +150,8 @@ app.get('/api/auth/callback', async (req, res) => {
   }
 });
 
-// Verify session middleware
-const verifySession = async (req, res, next) => {
-  try {
-    const bearerToken = req.headers.authorization?.match(/Bearer (.*)/)?.[1];
-    if (!bearerToken) {
-      res.status(401).send('Unauthorized');
-      return;
-    }
-
-    const session = await shopify.session.decodeSessionToken(bearerToken);
-    if (!session) {
-      res.status(401).send('Unauthorized');
-      return;
-    }
-    req.shopifySession = session;
-    next();
-  } catch (error) {
-    logger.error('Session verification error:', error);
-    res.status(401).send('Unauthorized');
-  }
-};
-
 // Protected routes
-app.get('/api/shop-info', verifySession, async (req, res) => {
+app.get('/api/shop-info', ensureAuthenticated, async (req, res) => {
   try {
     const client = new shopify.clients.Rest({
       session: req.shopifySession,
@@ -153,7 +167,7 @@ app.get('/api/shop-info', verifySession, async (req, res) => {
 });
 
 // VAT Validation Endpoint
-app.post('/api/validate-vat', verifySession, async (req, res) => {
+app.post('/api/validate-vat', ensureAuthenticated, async (req, res) => {
   try {
     const { vatId } = req.body;
     // TODO: Implement VAT validation logic
